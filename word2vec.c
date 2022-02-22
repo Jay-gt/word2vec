@@ -42,7 +42,7 @@ int *vocab_hash;
 long long vocab_max_size = 1000, vocab_size = 0, layer1_size = 100;
 long long train_words = 0, word_count_actual = 0, iter = 5, file_size = 0, classes = 0;
 real alpha = 0.025, starting_alpha, sample = 1e-3;
-real *syn0, *syn1, *syn1neg, *expTable;
+real *syn0, *syn1, *syn1neg, *expTable; // syn0代表第一个权重矩阵，syn1代表第二个
 clock_t start;
 
 int hs = 0, negative = 5;
@@ -379,10 +379,12 @@ void *TrainModelThread(void *id) {
   char eof = 0;
   real f, g;
   clock_t now;
-  real *neu1 = (real *)calloc(layer1_size, sizeof(real));
-  real *neu1e = (real *)calloc(layer1_size, sizeof(real));
+  real *neu1 = (real *)calloc(layer1_size, sizeof(real)); // neu1为隐藏层
+  real *neu1e = (real *)calloc(layer1_size, sizeof(real)); //
   FILE *fi = fopen(train_file, "rb");
-  fseek(fi, file_size / (long long)num_threads * (long long)id, SEEK_SET);
+  fseek(fi, file_size / (long long)num_threads * (long long)id, SEEK_SET); 
+  // 设置文件流fi的文件位置为给定的偏移（偏移的计算和当前线程在内存中的位置有关）
+  // 换句话说，每个线程训练内存中的一段数据
   while (1) {
     if (word_count - last_word_count > 10000) {
       word_count_actual += word_count - last_word_count;
@@ -489,6 +491,7 @@ void *TrainModelThread(void *id) {
           if (c >= sentence_length) continue;
           last_word = sen[c];
           if (last_word == -1) continue;
+          // Learn weights input -> hidden，neu1e中已根据论文公式进行了计算
           for (c = 0; c < layer1_size; c++) syn0[c + last_word * layer1_size] += neu1e[c];
         }
       }
@@ -557,17 +560,19 @@ void *TrainModelThread(void *id) {
 void TrainModel() {
   long a, b, c, d;
   FILE *fo;
-  pthread_t *pt = (pthread_t *)malloc(num_threads * sizeof(pthread_t));
+  pthread_t *pt = (pthread_t *)malloc(num_threads * sizeof(pthread_t)); // 分配线程池
   printf("Starting training using file %s\n", train_file);
   starting_alpha = alpha;
+  // 构建词典
   if (read_vocab_file[0] != 0) ReadVocab(); else LearnVocabFromTrainFile();
   if (save_vocab_file[0] != 0) SaveVocab();
   if (output_file[0] == 0) return;
+  // 初始化模型
   InitNet();
   if (negative > 0) InitUnigramTable();
   start = clock();
-  for (a = 0; a < num_threads; a++) pthread_create(&pt[a], NULL, TrainModelThread, (void *)a);
-  for (a = 0; a < num_threads; a++) pthread_join(pt[a], NULL);
+  for (a = 0; a < num_threads; a++) pthread_create(&pt[a], NULL, TrainModelThread, (void *)a); // 创建线程
+  for (a = 0; a < num_threads; a++) pthread_join(pt[a], NULL); // 主线程等待子线程结束
   fo = fopen(output_file, "wb");
   if (classes == 0) {
     // Save the word vectors
